@@ -75,31 +75,34 @@ namespace Api.Controllers
         /// В запросе - координаты точки, на выходе идентификатор и название поля (id, name), в случае если точка находится в одном из контуров полей.
         /// В случае, если точка не принадлежит ни одному из контуров полей, возвращаем false
         /// </summary>
-        [HttpGet("{id}/{lat}/{lon}/affiliation", Name = "GetAffiliation")]
-        public IActionResult GetAffiliation(int id, double lat, double lon)
+        [HttpGet("{lat}/{lon}/affiliation", Name = "GetAffiliation")]
+        public IActionResult GetAffiliation(double lat, double lon)
         {
-            var field = _context.Fields
+            var fields = _context.Fields
                 .Include(f => f.Locations)
                 .ThenInclude(l => l.Center)
                 .Include(f => f.Locations)
                 .ThenInclude(l => l.Polygon)
-                .FirstOrDefault(f => f.Id == id);
+                .ToList();
 
-            if (field == null) return NotFound();
+            foreach (var field in fields)
+            {
+                var isInside = _topologyWorker.IsInside(
+                    field.Locations.Polygon.Select(p => new[] { p.Longitude, p.Latitude }).ToList(),
+                    [lon, lat]
+                );
 
-            var isInside = _topologyWorker.IsInside(
-                field.Locations.Polygon.Select(p => new[] { p.Longitude, p.Latitude }).ToList(),
-                [lon, lat]
-            );
+                if (isInside)
+                {
+                    return Ok(new
+                    { 
+                        field.Id,
+                        field.Name
+                    });
+                }
+            }
 
-            if (isInside)
-                return Ok(new
-                { 
-                    IsInside = isInside,
-                    Name = field.Name
-                });
-            
-            return Ok(isInside);
+            return Ok(false);
         }
     }
 }
